@@ -38,6 +38,10 @@ set ooc_module_names { \
     mkQueuePair \
 }
 
+set ooc_module_names { \
+    mkBdmaWrapper \
+}
+
 proc runGenerateIP {args} {
     global dir_output part device dir_ips dir_xdc device dir_ip_gen
 

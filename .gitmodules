@@ -7,3 +7,7 @@
 [submodule "src/third_party/blue-wrapper"]
 	path = src/third_party/blue-wrapper
 	url = https://github.com/wengwz/blue-wrapper.git
+[submodule "src/third_party/blue-dmac"]
+	path = src/third_party/blue-dmac
+	url = https://github.com/datenlord/blue-dmac.git
+	branch = develop

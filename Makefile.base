@@ -25,7 +25,8 @@ BSVSRCDIR = -p +:$(abspath ../src) \
 			-p +:$(abspath ../src/third_party/blue-wrapper/src) \
 			-p +:$(abspath ../src/third_party/blue-udp/src) \
 			-p +:$(abspath ../src/third_party/blue-udp/src/includes) \
-			-p +:$(abspath ../src/third_party/blue-crc/src)
+			-p +:$(abspath ../src/third_party/blue-crc/src) \
+			-p +:$(abspath ../src/third_party/blue-dmac/src)
 
 
 BSV_C_EXT_FILES += \

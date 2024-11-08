@@ -33,7 +33,6 @@ import ExtractAndPrependPipeOut :: *;
 
 import MemRegionAndAddressTranslate :: *;
 import PayloadCon :: *;
-import XdmaWrapper :: *;
 
 import UserLogicSettings :: *;
 import UserLogicTypes :: *;
@@ -48,6 +47,9 @@ import SoftReset :: *;
 import PrimUtils :: *;
 
 // import SimDma :: *;
+import XdmaWrapper :: *;
+import BdmaWrapper :: *;
+import PcieTypes :: *;
 
 typedef 4791 TEST_UDP_PORT;
 typedef 32 CMAC_SYNC_BRAM_BUF_DEPTH;
@@ -55,9 +57,9 @@ typedef 4 CMAC_CDC_SYNC_STAGE;
 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
-    interface XdmaChannel#(dataSz, userSz) xdmaChannel;
-    interface RawAxi4LiteSlave#(CSR_ADDR_WIDTH, CSR_DATA_STRB_WIDTH) axilRegBlock;
-    
+    // Interface with PCIe IP
+    (* prefix = "" *)
+    interface RawXilinxPcieIp      rawPcie;
     
     // Interface with CMAC IP
     (* prefix = "" *)
@@ -86,21 +88,22 @@ module mkBsvTop(
     Clock udpClock <- exposeCurrentClock;
     Reset udpReset <- exposeCurrentReset;
     
-    XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
-    XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(dmacClock, dmacReset);
+    // XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
+    // XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(dmacClock, dmacReset);
+    BdmaWrapper bdmaWrap <- mkBdmaWrapper;
     RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
-    mkConnection(xdmaAxiLiteWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
-    mkConnection(xdmaAxiLiteWrap.csrReadClt, udpAndRdma.csrReadSrv);
+    mkConnection(bdmaWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
+    mkConnection(bdmaWrap.csrReadClt, udpAndRdma.csrReadSrv);
 
 `ifdef DO_BANDWIDTH_TEST
     let midLayer <- mkDmaReqMiddleLayerForBandwidthTest;
     mkConnection(midLayer.dmaReadSrv, udpAndRdma.dmaReadClt);
     mkConnection(midLayer.dmaWriteSrv, udpAndRdma.dmaWriteClt);
-    mkConnection(xdmaWrap.dmaReadSrv, midLayer.dmaReadClt);
-    mkConnection(xdmaWrap.dmaWriteSrv, midLayer.dmaWriteClt);
+    mkConnection(bdmaWrap.dmaReadSrv, midLayer.dmaReadClt);
+    mkConnection(bdmaWrap.dmaWriteSrv, midLayer.dmaWriteClt);
 `else    
-    mkConnection(xdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
-    mkConnection(xdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
+    mkConnection(bdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
+    mkConnection(bdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
 `endif
 
 
@@ -145,8 +148,9 @@ module mkBsvTop(
         end
     endrule
 
-    interface xdmaChannel = xdmaWrap.xdmaChannel;
-    interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
+    // interface xdmaChannel = xdmaWrap.xdmaChannel;
+    // interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
+    interface rawPcie = bdmaWrap.rawPcie;
     interface cmacController = xilinxCmacCtrl;
 
     method csrSoftResetSignal = globalSoftReset.resetOut;
