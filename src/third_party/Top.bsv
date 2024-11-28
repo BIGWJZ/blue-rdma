@@ -50,11 +50,14 @@ import PrimUtils :: *;
 import XdmaWrapper :: *;
 import BdmaWrapper :: *;
 import PcieTypes :: *;
+import AxiStreamTypes :: *;
+import BusConversion :: *;
 
 typedef 4791 TEST_UDP_PORT;
 typedef 32 CMAC_SYNC_BRAM_BUF_DEPTH;
 typedef 4 CMAC_CDC_SYNC_STAGE;
 
+`define LOCAL_LOOP_TEST 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     // Interface with PCIe IP
@@ -125,7 +128,6 @@ module mkBsvTop(
         udpAndRdma.axiStreamTxOutUdp
     );
 
-
     FifoOut#(FlowControlReqVec) txFlowCtrlReqVec <- mkDummyFifoOut;
     FifoIn#(FlowControlReqVec) rxFlowCtrlReqVec <- mkDummyFifoIn;
     let xilinxCmacCtrl <- mkXilinxCmacController(
@@ -154,6 +156,51 @@ module mkBsvTop(
     interface cmacController = xilinxCmacCtrl;
 
     method csrSoftResetSignal = globalSoftReset.resetOut;
+endmodule
+
+interface CocotbTop#(numeric type dataSz, numeric type userSz);
+    // Interface with PCIe IP
+    (* prefix = "" *)
+    interface RawXilinxPcieIp      rawPcie;
+    
+    // Interface with Raw Mac AxiStream
+    (* prefix = "udp_tx" *)
+    interface RawAxiStream512Master rawAxisMaster;
+    (* prefix = "udp_rx" *)
+    interface RawAxiStream512Slave rawAxisSlave;
+endinterface
+
+(* synthesize *)
+module mkCocotbTop(
+    CocotbTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
+);
+
+    Clock dmacClock <- exposeCurrentClock;
+    Reset dmacReset <- exposeCurrentReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
+    
+    BdmaWrapper bdmaWrap <- mkBdmaWrapper;
+    RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
+    mkConnection(bdmaWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
+    mkConnection(bdmaWrap.csrReadClt, udpAndRdma.csrReadSrv);
+
+    mkConnection(bdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
+    mkConnection(bdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
+
+
+    Bool isCmacTxWaitRxAligned = True;
+    Bool isEnableFlowControl = False;
+    Bool isEnableRsFec = True;
+
+    let rawAxisSlaveIfc  <- mkPutToRawAxiStreamSlave(udpAndRdma.axiStreamRxInUdp, CF);
+    let rawAxisMasterIfc <- mkFifoOutToRawAxiStreamMaster(udpAndRdma.axiStreamTxOutUdp);
+
+    interface rawPcie = bdmaWrap.rawPcie;
+    interface rawAxisMaster = rawAxisMasterIfc;
+    interface rawAxisSlave  = rawAxisSlaveIfc;
+
 endmodule
 
 interface UdpWrapper;
@@ -610,6 +657,8 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
+`ifndef LOCAL_LOOP_TEST
+
     rule forwardRdmaRxStreamIdle if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle);
         
         if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
@@ -694,6 +743,51 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
         end
     endrule
+
+`else
+    Reg#(Bool) isLoopRawPktReg <- mkReg(False);
+    rule forwardRdmaTxToRdmaRx;
+        if (udpTxIpMetaBufQ.notEmpty && udpTxMacMetaBufQ.notEmpty) begin
+            let data = udpTxStreamBufQ.first;
+            let stream = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
+                data: swapEndian(data.data),
+                byteEn: swapEndianBit(data.byteEn),
+                isLast: data.isLast,
+                isFirst: data.isFirst
+            });
+            let ipMeta = udpTxIpMetaBufQ.first;
+            let macMeta = udpTxMacMetaBufQ.first;
+            let isRawPkt = macMeta.isBypass;
+            let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
+            if (isRawPkt) begin
+                udpRxStreamBufQ.enq(tuple3(stream, True, srcMacIpIdx));
+                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                    ip     : tagged IPv4 unpack(0),
+                    macAddr: unpack(0)
+                }));
+            end
+            else begin
+                udpRxStreamBufQ.enq(tuple3(stream, False, srcMacIpIdx));
+                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
+                    ip     : tagged IPv4 unpack(pack(ipMeta.ipAddr)),
+                    macAddr: unpack(pack(macMeta.macMetaData.macAddr))
+            }));
+            isLoopRawPktReg <= isRawPkt;
+            end
+        end
+        else begin
+            let data = udpTxStreamBufQ.first;
+            let stream = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
+                data: swapEndian(data.data),
+                byteEn: swapEndianBit(data.byteEn),
+                isLast: data.isLast,
+                isFirst: data.isFirst
+            });
+            udpRxStreamBufQ.enq(tuple3(stream, isLoopRawPktReg, ?));
+        end
+    endrule
+
+`endif
 
     rule sendAutoAckMacIpStorageReadReq;
         let autoAckMeta = rdma.autoAckMetaPipeOut.first;

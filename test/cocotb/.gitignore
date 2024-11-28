@@ -1,0 +1,6 @@
+__pycache__
+sim_build
+*.v
+log
+*.mem
+!primitives/LookupTableLoad.v

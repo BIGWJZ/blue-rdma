@@ -7,6 +7,8 @@ import ClientServer :: *;
 import PrimUtils :: *;
 import PayloadGen :: *;
 import EthernetTypes :: *;
+import AxiStreamTypes :: *;
+import Ports :: *;
 
 typedef 20 CSR_ADDR_WIDTH;
 typedef 4 CSR_DATA_STRB_WIDTH;
@@ -392,3 +394,6 @@ typedef struct {
     ReservedZero#(160)                          reserved1;       // 160
     MeatReportQueueDescFragSecondaryRETH        secReth;         // 96
 } MeatReportQueueDescSecondaryReth deriving(Bits, FShow);
+
+typedef RawAxiStreamMaster#(AXIS512_TKEEP_WIDTH, AXIS_TUSER_WIDTH) RawAxiStream512Master;
+typedef RawAxiStreamSlave#(AXIS512_TKEEP_WIDTH, AXIS_TUSER_WIDTH)  RawAxiStream512Slave;

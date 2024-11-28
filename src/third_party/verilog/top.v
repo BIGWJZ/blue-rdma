@@ -300,8 +300,6 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
   wire            gt_ctl_rx_rsfec_enable_correction;
   wire            gt_ctl_rx_rsfec_enable_indication;
 
-  wire    global_soft_reset;
-
   // CMAC CTRL STATE
   wire [3:0]      cmac_ctrl_tx_state;
   wire [3:0]      cmac_ctrl_rx_state;
@@ -525,7 +523,7 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
     .RST_N(user_resetn),
     .global_reset_100mhz_clk(global_reset_100mhz_clk),
     .global_reset_resetn(sys_rst_n_c),
-    .csrSoftResetSignal(global_soft_reset),
+    .csrSoftResetSignal(0),
 
     // PCIe Interface
 

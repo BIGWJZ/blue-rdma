@@ -12,22 +12,26 @@ set_property -dict [list CONFIG.PL_LINK_CAP_MAX_LINK_SPEED {8.0_GT/s} \
     CONFIG.pf0_bar0_size {4} \
     CONFIG.pf0_bar1_enabled {true} \
     CONFIG.pf0_bar1_type {Memory} \
-    CONFIG.pf0_bar1_size {8} \
+    CONFIG.pf0_bar1_scale {Megabytes} \
+    CONFIG.pf0_bar1_size {2} \
     CONFIG.pf0_dev_cap_max_payload {512_bytes} \
     CONFIG.extended_tag_field {false} \
     CONFIG.pf1_bar0_size {4} \
     CONFIG.pf1_bar1_enabled {true} \
     CONFIG.pf1_bar1_type {Memory} \
-    CONFIG.pf1_bar1_size {8} \
+    CONFIG.pf1_bar1_scale {Megabytes} \
+    CONFIG.pf1_bar1_size {2} \
     CONFIG.axisten_if_width {512_bit} \
     CONFIG.pf2_bar0_size {4} \
     CONFIG.pf2_bar1_enabled {true} \
     CONFIG.pf2_bar1_type {Memory} \
-    CONFIG.pf2_bar1_size {8} \
+    CONFIG.pf1_bar1_scale {Megabytes} \
+    CONFIG.pf1_bar1_size {2} \
     CONFIG.pf3_bar0_size {4} \
     CONFIG.pf3_bar1_enabled {true} \
     CONFIG.pf3_bar1_type {Memory} \
-    CONFIG.pf3_bar1_size {8} \
+    CONFIG.pf3_bar1_scale {Megabytes} \
+    CONFIG.pf3_bar1_size {2} \
     CONFIG.mode_selection {Advanced} \
     CONFIG.coreclk_freq {500} \
     CONFIG.plltype {QPLL1} \

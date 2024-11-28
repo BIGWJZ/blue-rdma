@@ -21,7 +21,7 @@ create_clock -name board_sys_clk -period 10 [get_ports board_sys_clk_p]
 
 # SLR Partition
 # set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -regexp -hierarchical mmcm_250_to_500.*]
-set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {xdma_0_i}]
+set_property USER_SLR_ASSIGNMENT SLR1 [get_cells {pcie4_uscale_plus_0_i}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {refclk_ibuf}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {sys_reset_n_ibuf}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {cmac_inst} ]
@@ -29,4 +29,4 @@ set_property USER_SLR_ASSIGNMENT SLR2 [get_cells {bsv_userlogic_top_inst}]
 set_property USER_SLR_ASSIGNMENT SLR2 [get_cells -hierarchical "udp*"]
 
 # very tricky one
-set_property USER_SLR_ASSIGNMENT SLR2 [get_cells xdma_0_i/inst/pcie4_ip_i/inst/user_reset_reg]
+# set_property USER_SLR_ASSIGNMENT SLR2 [get_cells xdma_0_i/inst/pcie4_ip_i/inst/user_reset_reg]

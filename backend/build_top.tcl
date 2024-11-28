@@ -12,7 +12,7 @@ set max_net_path_num $::env(MAX_NET_PATH_NUM)
 
 set current_time [clock format [clock seconds] -format "%Y-%m-%d-%H-%M-%S"]
 
-set_param general.maxthreads 1
+set_param general.maxthreads 2
 set device [get_parts $part]; # xcvu13p-fhgb2104-2-i; #
 set_part $device
 

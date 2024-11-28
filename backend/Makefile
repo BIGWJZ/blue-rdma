@@ -81,6 +81,9 @@ vivado_ooc:
 vivado_synth:
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl -tclargs synth 2>&1 | tee $(LOGFILE)
 
+vivado_prw:
+	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl -tclargs prw 2>&1 | tee $(LOGFILE)
+
 vivado_batch: vivado_synth
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl -tclargs prw ExtraNetDelay_high 2>&1 | tee ext.out & \
 	vivado -mode tcl -nolog -nojournal -source ./build_top.tcl -tclargs prw WLDrivenBlockPlacement 2>&1 | tee wld.out & \
