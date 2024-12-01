@@ -15,20 +15,20 @@ from cocotbext.axi import (AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStre
 # | Root Complex | <->  | End Pointer |  <->  | Dut(DMAC) |   <->  User Logic     
 #  -------------------------------------------------------
 
-BAR0_SIZE = 4 * 1024        # BDMA BAR Space
-BAR1_SIZE = 2 * 1024 * 1024 # User BAR Space (Blue-Rdma)
+BAR0_SIZE = 4 * 1024        # 4KB, BDMA BAR Space
+BAR1_SIZE = 2 * 1024 * 1024 # 2MB, User BAR Space (Blue-Rdma)
 
-HOST_MEM_SIZE = 64 * 1024 * 1024 # Hosr Memory
+HOST_MEM_SIZE = 64 * 1024 * 1024 # 64MB, Host Memory
 
 DescBus, DescTransaction, DescSource, DescSink, DescMonitor = define_stream("Desc",
     signals=["start_addr", "byte_cnt", "is_write", "valid", "ready"]
 )
 
-class PcieTb(object):
+class BdmaTb(object):
     def __init__(self, dut, msix=False):
         self.dut = dut
         self.log = logging.getLogger("Bdma PcieTb")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
         self.clock = None           # User Clk
         self.resetn = None          # User Rstn
         self.rc = None              # RootComplex
@@ -322,7 +322,7 @@ class PcieBarTb:
     def __init__(self, bar):
         self.bar = bar
         self.log = logging.getLogger("Bdma PcieBarHost")
-        self.log.setLevel(logging.DEBUG)
+        self.log.setLevel(logging.INFO)
             
     async def write_csr_blocking(self, addr:int, value:int):
         self.log.debug("PCIeTb Debug: write bar addr:%d, value:%d" % (addr, value))
@@ -330,7 +330,9 @@ class PcieBarTb:
 
     async def read_csr_blocking(self, addr) -> int:
         value_bytes = await self.bar.read(addr, 4)
-        return int.from_bytes(value_bytes, byteorder='little', signed=False)
+        value = int.from_bytes(value_bytes, byteorder='little', signed=False)
+        self.log.debug("PCIeTb Debug: read bar addr:%d, value:%d" % (addr, value))
+        return value
     
 
     

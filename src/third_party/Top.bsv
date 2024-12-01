@@ -57,7 +57,7 @@ typedef 4791 TEST_UDP_PORT;
 typedef 32 CMAC_SYNC_BRAM_BUF_DEPTH;
 typedef 4 CMAC_CDC_SYNC_STAGE;
 
-`define LOCAL_LOOP_TEST 
+// `define LOCAL_LOOP_TEST 
 
 interface BsvTop#(numeric type dataSz, numeric type userSz);
     // Interface with PCIe IP
@@ -547,9 +547,9 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
 
     // rule debug;
-    //     // if (!udpTxStreamBufQ.notFull) begin
-    //     //     $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpTxStreamBufQ");
-    //     // end
+    //     if (!udpTxStreamBufQ.notFull) begin
+    //         $display("time=%0t: ", $time, "FULL_QUEUE_DETECTED: udpTxStreamBufQ");
+    //     end
 
     //     if (!udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
     //         $display("time=%0t: ", $time, "EMPTY_QUEUE_DETECTED: udp.netTxRxIfc.dataStreamRxOut");
@@ -657,8 +657,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
 
     endrule
 
-`ifndef LOCAL_LOOP_TEST
-
     rule forwardRdmaRxStreamIdle if (isReceivingRawPacketReg == UdpReceivingChannelSelectStateIdle);
         
         if (udp.netTxRxIfc.dataStreamRxOut.notEmpty) begin
@@ -743,51 +741,6 @@ module mkRdmaUserLogicWithoutXdmaAndCmacWrapper(
             isReceivingRawPacketReg <= UdpReceivingChannelSelectStateIdle;
         end
     endrule
-
-`else
-    Reg#(Bool) isLoopRawPktReg <- mkReg(False);
-    rule forwardRdmaTxToRdmaRx;
-        if (udpTxIpMetaBufQ.notEmpty && udpTxMacMetaBufQ.notEmpty) begin
-            let data = udpTxStreamBufQ.first;
-            let stream = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
-                data: swapEndian(data.data),
-                byteEn: swapEndianBit(data.byteEn),
-                isLast: data.isLast,
-                isFirst: data.isFirst
-            });
-            let ipMeta = udpTxIpMetaBufQ.first;
-            let macMeta = udpTxMacMetaBufQ.first;
-            let isRawPkt = macMeta.isBypass;
-            let srcMacIpIdx <- recvMacIpStorage.allocSlotIdx.get;
-            if (isRawPkt) begin
-                udpRxStreamBufQ.enq(tuple3(stream, True, srcMacIpIdx));
-                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
-                    ip     : tagged IPv4 unpack(0),
-                    macAddr: unpack(0)
-                }));
-            end
-            else begin
-                udpRxStreamBufQ.enq(tuple3(stream, False, srcMacIpIdx));
-                recvMacIpStorage.saveData.put(tuple2(srcMacIpIdx, RecvPacketSrcMacIpBufferEntry{
-                    ip     : tagged IPv4 unpack(pack(ipMeta.ipAddr)),
-                    macAddr: unpack(pack(macMeta.macMetaData.macAddr))
-            }));
-            isLoopRawPktReg <= isRawPkt;
-            end
-        end
-        else begin
-            let data = udpTxStreamBufQ.first;
-            let stream = dataStreamEnLeftAlign2DataStream(DataTypes::DataStreamEn {
-                data: swapEndian(data.data),
-                byteEn: swapEndianBit(data.byteEn),
-                isLast: data.isLast,
-                isFirst: data.isFirst
-            });
-            udpRxStreamBufQ.enq(tuple3(stream, isLoopRawPktReg, ?));
-        end
-    endrule
-
-`endif
 
     rule sendAutoAckMacIpStorageReadReq;
         let autoAckMeta = rdma.autoAckMetaPipeOut.first;

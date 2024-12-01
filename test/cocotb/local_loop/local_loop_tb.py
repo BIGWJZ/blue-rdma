@@ -2,77 +2,132 @@ import sys
 import os
 import cocotb
 import cocotb_test.simulator
-import logging
-
-
-from cocotbext.axi import (AxiStreamBus, AxiStreamSource, AxiStreamSink, AxiStreamMonitor, AxiStreamFrame)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from pcie_tb import PcieTb
-from cmac_tb import CmacTb
 from ringbufs import *
+from bluerdma_tb import *
 
 tests_dir = os.path.dirname(__file__)
 rtl_dir = tests_dir
 cocotb_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 prm_dir = cocotb_dir + '/primitives'
 
-USER_BAR_ID = 1
+# Local Looping Settings
+SEND_SIDE_KEY = 0x6622
+RECV_SIDE_KEY = SEND_SIDE_KEY
+PKEY_INDEX = 0
 
-CMD_Q_H2C_RINGBUF_START_PA = 0x0
-CMD_Q_C2H_RINGBUF_START_PA = 0x1000
-SEND_Q_RINGBUF_START_PA = 0x2000
-META_REPORT_Q_RINGBUF_START_PA = 0x3000
+SEND_SIDE_QPN = 0x6611
+SEND_SIDE_PD_HANDLER = 0x6611  # in practise, this should be returned by hardware
+RECV_SIDE_QPN= SEND_SIDE_QPN
 
-NIC_CONFIG_GATEWAY = 0x00000001
-NIC_CONFIG_IPADDR = 0x11223344
-NIC_CONFIG_NETMASK = 0xFFFFFFFF
-NIC_CONFIG_MACADDR = 0xAABBCCDDEEFF
+RECV_SIDE_IP = NIC_CONFIG_IPADDR
+RECE_SIDE_MAC = NIC_CONFIG_MACADDR
+SEND_SIDE_PSN = 0x0
 
-class LocalLoopTb:
-    def __init__(self, dut):
-        self.log = logging.getLogger("cocotb.tb")
-        self.log.setLevel(logging.DEBUG)
-        
-        self.pcie_tb = PcieTb(dut)
-        self.clock = self.pcie_tb.clock
-        self.resetn = self.pcie_tb.resetn
-        # self.cmac_tb = CmacTb(dut)
-        
-        self.udp_rx = AxiStreamBus.from_prefix(dut, "udp_rx")
-        self.udp_tx = AxiStreamBus.from_prefix(dut, "udp_tx")
-        self.dummySink = AxiStreamMonitor(self.udp_tx, self.clock, self.resetn)
-        
-    async def start(self):
-        self.log.info("Blue-RDMA Local Loop TestBench Starting...")
-        await self.pcie_tb.start()
-        self.bar = self.pcie_tb.get_bar(USER_BAR_ID)
-        self.mem = self.pcie_tb.get_host_mem()
-        
-        self.cmd_req_queue = RingbufCommandReqQueue(
-            self.mem, CMD_Q_H2C_RINGBUF_START_PA, bar_host=self.bar)
-        self.cmd_resp_queue = RingbufCommandRespQueue(
-            self.mem, CMD_Q_C2H_RINGBUF_START_PA, bar_host=self.bar)
-        self.send_queue = RingbufSendQueue(
-            self.mem, SEND_Q_RINGBUF_START_PA, bar_host=self.bar)
-        self.meta_report_queue = RingbufMetaReportQueue(
-            self.mem, META_REPORT_Q_RINGBUF_START_PA, bar_host=self.bar)
-        
-        await self.cmd_req_queue.start()
-        await self.cmd_resp_queue.start()
-        await self.send_queue.start()
-        await self.meta_report_queue.start()
-        self.log.info("Writing UDP parameters...")
-        self.cmd_req_queue.put_desc_set_udp_param(
-            NIC_CONFIG_GATEWAY, NIC_CONFIG_NETMASK, NIC_CONFIG_IPADDR, NIC_CONFIG_MACADDR)
-        await self.cmd_req_queue.sync_pointers()
-        await self.cmd_resp_queue.deq_blocking()
+PMTU_VALUE_FOR_TEST = PMTU.IBV_MTU_256
+
+SEND_BYTE_COUNT = PMTU_VALUE_FOR_TEST
+
+USER_BASE_VA = 0x12345600000  # map to MR_0_START_PA : MR_O_START_PA + MR_0_LENGTH
+
+REQ_SIDE_VA_OFFSET = 0x200000
+REQ_SIDE_VA_ADDR = (USER_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + REQ_SIDE_VA_OFFSET
+REQ_SIDE_PA_ADDR = MR_0_START_PA + REQ_SIDE_VA_OFFSET
+
+RESP_SIDE_VA_OFFSET = 0x0
+RESP_SIDE_VA_ADDR = (USER_BASE_VA & HUGEPAGE_2M_ADDR_MASK) + RESP_SIDE_VA_OFFSET
+RESP_SIDE_PA_ADDR = MR_0_START_PA + RESP_SIDE_VA_OFFSET
+
+class AxiStreamConnector:
+    def __init__(self, tx_bus: AxiStreamBus, rx_bus: AxiStreamBus, clock, resetn):
+        self.tx_sink = AxiStreamSink(tx_bus, clock, resetn, reset_active_level=False)
+        self.rx_source = AxiStreamSource(rx_bus, clock, resetn, reset_active_level=False)
+    
+    async def relay(self):
+        while True:
+            frame = await self.tx_sink.recv()
+            print("Blue-Rdma DEBUG: recv frame from udp_tx: ", frame)
+            await self.rx_source.send(frame)
+            
+    def connect(self):
+        cocotb.start_soon(self.relay())
 
 @cocotb.test(timeout_time=10000000, timeout_unit="ns")          
-async def bar_test(dut):
-    tb = LocalLoopTb(dut)
+async def local_loop_test(dut):
+    tb = BlueRdmaTb(dut)
+    connector = AxiStreamConnector(tb.udp_tx, tb.udp_rx, tb.clock, tb.resetn)
+    connector.connect()
+    
     await tb.start()
+    
+    await tb.memory_register(
+        va=USER_BASE_VA,
+        length=MR_0_LENGTH,
+        pa=MR_0_START_PA,
+        key=SEND_SIDE_KEY,
+        pgt_offset=0x0,
+        pd_handle=SEND_SIDE_PD_HANDLER
+    )
+    
+    await tb.create_qp(
+        qpn=SEND_SIDE_QPN,
+        peer_qpn=RECV_SIDE_QPN,
+        pd_handler=SEND_SIDE_PD_HANDLER,
+        qp_type=TypeQP.IBV_QPT_RC,
+        acc_flag=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
+        pmtu=PMTU_VALUE_FOR_TEST,
+    )
+    
+    sgl = [
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=REQ_SIDE_VA_ADDR),
+    ]
+
+    tb.send_queue.put_work_request(
+        opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
+        is_first=True,
+        is_last=True,
+        sgl=sgl,
+        r_va=RESP_SIDE_VA_ADDR,
+        r_key=RECV_SIDE_KEY,
+        r_ip=RECV_SIDE_IP,
+        r_mac=RECE_SIDE_MAC,
+        dqpn=RECV_SIDE_QPN,
+        psn=SEND_SIDE_PSN,
+        pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
+    )
+    
+    for i in range(SEND_BYTE_COUNT):
+        tb.mem[REQ_SIDE_PA_ADDR+i] = (0xBB + i) & 0xFF
+        tb.mem[RESP_SIDE_PA_ADDR+i] = 0
+        
+    await tb.send_queue.sync_pointers()
+    
+    rpt = await tb.meta_report_queue.deq_blocking()
+    print("receive meta report: ", MeatReportQueueDescBthReth.from_buffer_copy(rpt))
+    assert_descriptor_reth(rpt, RdmaOpCode.RDMA_WRITE_ONLY)
+    
+    
+    ack_rpt = await tb.meta_report_queue.deq_blocking()
+    assert_descriptor_ack(ack_rpt)
+
+    src_data = tb.mem[REQ_SIDE_PA_ADDR  : REQ_SIDE_PA_ADDR+SEND_BYTE_COUNT]
+    dst_data = tb.mem[RESP_SIDE_PA_ADDR : RESP_SIDE_PA_ADDR+SEND_BYTE_COUNT]
+    
+    if src_data != dst_data:
+        print("Error: DMA Target mem is not the same as source mem")
+        for idx in range(len(src_data)):
+            if src_data[idx] != dst_data[idx]:
+                print("id:", idx,
+                      "src: ", hex(src_data[idx]),
+                      "dst: ", hex(dst_data[idx])
+                      )
+        raise SystemExit
+    else:
+        print("PASS")
 
 def test_rdma():
     dut = "mkCocotbTop"
@@ -91,7 +146,7 @@ def test_rdma():
         verilog_sources=verilog_sources,
         toplevel=toplevel,
         module=module,
-        # timescale="1ns/1ps",
+        timescale="1ns/1ps",
         sim_build=sim_build
     )
     

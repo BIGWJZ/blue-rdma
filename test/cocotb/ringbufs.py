@@ -28,10 +28,12 @@ class Ringbuf:
         if (self.is_h2c):
             await self.bar_host.write_csr_blocking(self.head_csr_addr, self.head)
             new_tail = await self.bar_host.read_csr_blocking(self.tail_csr_addr)
+            # print("Debug: head %d tail %d new_tail %d" % (self.head, self.tail, new_tail))
             self.set_tail_pointer_with_guard_bit(new_tail)
         else:
             await self.bar_host.write_csr_blocking(self.tail_csr_addr, self.tail)
             new_head = await self.bar_host.read_csr_blocking(self.head_csr_addr)
+            # print("Debug: head %d tail %d new_head %d" % (self.head, self.tail, new_head))
             self.set_head_pointer_with_guard_bit(new_head)
 
     def is_full(self):
@@ -57,10 +59,10 @@ class Ringbuf:
         self.tail = tail
         
     def write_backend_mem(self, addr, len, data):
-        self.backend_mem[self.start_pa + addr: self.start_pa + addr + len] = data
+        self.backend_mem[self.start_pa + addr : self.start_pa + addr + len] = data
         
     def read_backend_mem(self, addr, len) -> bytes:
-        return self.backend_mem[self.start_pa]
+        return self.backend_mem[self.start_pa + addr : self.start_pa + addr + len]
 
     def enq(self, element):
         if self.is_full():
@@ -90,8 +92,8 @@ class Ringbuf:
         while self.is_empty():
             times = times + 1
             await self.sync_pointers()
-            time.sleep(0.001)
-            if (times > 1000):
+            time.sleep(1)
+            if (times > 100):
                 raise RuntimeError("Ringbuffer deq_blocking timeout")
         return self.deq()
 
@@ -100,6 +102,8 @@ class RingbufCommandReqQueue:
     def __init__(self, backend_mem, addr, bar_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem, start_pa=addr, bar_host=bar_host, is_h2c=True,
                           head_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_TAIL)
+        print("Blue-RDMA INFO: cmdReqQ init, buffer pa:0x%x head_csr_addr:%d, tail_csr_addr:%d"%
+              (addr, CSR_ADDR_CMD_REQ_QUEUE_HEAD, CSR_ADDR_CMD_REQ_QUEUE_TAIL))
         self.start_pa = addr
         self.bar_host = bar_host
     
@@ -217,6 +221,8 @@ class RingbufCommandRespQueue:
     def __init__(self, backend_mem, addr, bar_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem, start_pa=addr, bar_host=bar_host, is_h2c=False,
                           head_csr_addr=CSR_ADDR_CMD_RESP_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_CMD_RESP_QUEUE_TAIL)
+        print("Blue-RDMA INFO: cmdRespQ init, buffer pa:0x%x head_csr_addr:%d, tail_csr_addr:%d"%
+              (addr, CSR_ADDR_CMD_RESP_QUEUE_HEAD, CSR_ADDR_CMD_RESP_QUEUE_TAIL))
         self.start_pa = addr
         self.bar_host = bar_host
     
@@ -232,14 +238,16 @@ class RingbufCommandRespQueue:
     def deq(self):
         return self.rb.deq()
 
-    def deq_blocking(self):
-        self.rb.deq_blocking()
+    async def deq_blocking(self):
+        await self.rb.deq_blocking()
 
 
 class RingbufSendQueue:
     def __init__(self, backend_mem, addr, bar_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem, start_pa=addr, bar_host=bar_host, is_h2c=True,
                           head_csr_addr=CSR_ADDR_SEND_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_SEND_QUEUE_TAIL)
+        print("Blue-RDMA INFO: SQ init, buffer pa:0x%x head_csr_addr:%d, tail_csr_addr:%d"%
+              (addr, CSR_ADDR_SEND_QUEUE_HEAD, CSR_ADDR_SEND_QUEUE_TAIL))
         self.start_pa = addr
         self.bar_host = bar_host
     
@@ -295,6 +303,8 @@ class RingbufMetaReportQueue:
     def __init__(self, backend_mem, addr, bar_host) -> None:
         self.rb = Ringbuf(backend_mem=backend_mem, start_pa=addr, bar_host=bar_host, is_h2c=False,
                           head_csr_addr=CSR_ADDR_META_REPORT_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_META_REPORT_QUEUE_TAIL)
+        print("Blue-RDMA INFO: RQ init, buffer pa:0x%x head_csr_addr:%d, tail_csr_addr:%d"%
+              (addr, CSR_ADDR_META_REPORT_QUEUE_HEAD, CSR_ADDR_META_REPORT_QUEUE_TAIL))
         self.start_pa = addr
         self.bar_host = bar_host
     
