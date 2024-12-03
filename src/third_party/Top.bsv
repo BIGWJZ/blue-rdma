@@ -116,6 +116,21 @@ module mkBsvTop(
 
     let axiStream512RxIn <- mkPutToFifoIn(udpAndRdma.axiStreamRxInUdp);
 
+`ifdef LOCAL_LOOP_TEST
+    FifoIn#(AxiStream512) emptyFifoIn <- mkDummyFifoIn;
+    let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
+        valueOf(CMAC_SYNC_BRAM_BUF_DEPTH),
+        valueOf(CMAC_CDC_SYNC_STAGE),
+        udpClock,
+        udpReset,
+        cmacRxTxClk,
+        cmacRxReset,
+        cmacTxReset,
+        emptyFifoIn,
+        udpAndRdma.axiStreamTxOutUdp
+    );
+    mkConnection(udpAndRdma.axiStreamTxOutUdp, axiStream512RxIn);
+`else
     let axiStream512SyncFifoForCMAC <- mkDuplexAxiStreamAsyncFifo(
         valueOf(CMAC_SYNC_BRAM_BUF_DEPTH),
         valueOf(CMAC_CDC_SYNC_STAGE),
@@ -127,6 +142,7 @@ module mkBsvTop(
         axiStream512RxIn,
         udpAndRdma.axiStreamTxOutUdp
     );
+`endif
 
     FifoOut#(FlowControlReqVec) txFlowCtrlReqVec <- mkDummyFifoOut;
     FifoIn#(FlowControlReqVec) rxFlowCtrlReqVec <- mkDummyFifoIn;
@@ -150,8 +166,6 @@ module mkBsvTop(
         end
     endrule
 
-    // interface xdmaChannel = xdmaWrap.xdmaChannel;
-    // interface axilRegBlock = xdmaAxiLiteWrap.cntrlAxil;
     interface rawPcie = bdmaWrap.rawPcie;
     interface cmacController = xilinxCmacCtrl;
 

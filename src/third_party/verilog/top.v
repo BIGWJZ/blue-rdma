@@ -191,8 +191,8 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
   wire                              [7:0]    cfg_ds_bus_number;
   wire                              [4:0]    cfg_ds_device_number;
    
-  wire 					                              user_clk_250;
-  wire 					   user_resetn;
+  wire 					                             user_clk_250;
+  wire 					                             user_reset;
 
   //----------------------------------------------------------------------------------------------------------------//
   //    System(SYS) Interface                                                                                       //
@@ -308,12 +308,11 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
 
   reg qsfp_reset_flag_reg;
 
-  always @ (negedge user_resetn) begin
+  always @ (posedge user_reset) begin
     qsfp_reset_flag_reg <= !qsfp_reset_flag_reg;
   end
 
   assign qsfp2_lpmode_out = 1'b0;
-  // assign qsfp2_resetl_out = qsfp_reset_flag_reg ? 1'b1 : user_resetn;
   assign qsfp2_resetl_out = 1'b1;
 
   pcie4_uscale_plus_0  pcie4_uscale_plus_0_i (
@@ -520,10 +519,10 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
     .cmac_rx_resetn(~gt_usr_rx_reset),
     .cmac_tx_resetn(~gt_usr_tx_reset),
     .CLK(user_clk_250),
-    .RST_N(user_resetn),
+    .RST_N(~user_reset),
     .global_reset_100mhz_clk(global_reset_100mhz_clk),
     .global_reset_resetn(sys_rst_n_c),
-    .csrSoftResetSignal(0),
+    .csrSoftResetSignal(),
 
     // PCIe Interface
 
@@ -775,8 +774,7 @@ parameter AXI4_RC_TUSER_WIDTH            = 161
   assign gtwiz_reset_tx_datapath    = 1'b0;
   assign gtwiz_reset_rx_datapath    = 1'b0;
 
-  assign udp_reset = user_resetn;
-  assign cmac_sys_reset = ~ user_resetn;
+  assign cmac_sys_reset = user_reset;
 
 
 cmac_usplus_0 cmac_inst(
