@@ -54,8 +54,7 @@ class AxiStreamConnector:
     def connect(self):
         cocotb.start_soon(self.relay())
 
-@cocotb.test(timeout_time=10000000, timeout_unit="ns")          
-async def local_loop_test(dut):
+async def tb_init(dut):
     tb = BlueRdmaTb(dut)
     connector = AxiStreamConnector(tb.udp_tx, tb.udp_rx, tb.clock, tb.resetn)
     connector.connect()
@@ -79,6 +78,15 @@ async def local_loop_test(dut):
         acc_flag=MemAccessTypeFlag.IBV_ACCESS_LOCAL_WRITE | MemAccessTypeFlag.IBV_ACCESS_REMOTE_READ | MemAccessTypeFlag.IBV_ACCESS_REMOTE_WRITE,
         pmtu=PMTU_VALUE_FOR_TEST,
     )
+    
+    return tb
+    
+# Test 1: Write Remote Data
+
+@cocotb.test(timeout_time=10000000, timeout_unit="ns")          
+async def local_loop_test_write(dut):
+    print("BlueRdma local_loop_write_tb: Starting...")
+    tb = await tb_init(dut)
     
     sgl = [
         SendQueueReqDescFragSGE(
@@ -110,7 +118,6 @@ async def local_loop_test(dut):
     print("receive meta report: ", MeatReportQueueDescBthReth.from_buffer_copy(rpt))
     assert_descriptor_reth(rpt, RdmaOpCode.RDMA_WRITE_ONLY)
     
-    
     ack_rpt = await tb.meta_report_queue.deq_blocking()
     assert_descriptor_ack(ack_rpt)
 
@@ -127,7 +134,45 @@ async def local_loop_test(dut):
                       )
         raise SystemExit
     else:
-        print("PASS")
+        print("local_loop_tb: PASS RDMA Write Test!")
+        
+# Test 2: Read Remote Data
+@cocotb.test(timeout_time=10000000, timeout_unit="ns")          
+async def local_loop_test_read(dut):    
+    print("BlueRdma local_loop_read_tb: Starting...")
+    tb = await tb_init(dut)
+    
+    sgl = [
+        SendQueueReqDescFragSGE(
+            F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=RESP_SIDE_VA_ADDR),
+    ]
+    tb.send_queue.put_work_request(
+        opcode=WorkReqOpCode.IBV_WR_RDMA_READ,
+        is_first=True,
+        is_last=True,
+        sgl=sgl,
+        r_va=REQ_SIDE_VA_ADDR,
+        r_key=RECV_SIDE_KEY,
+        r_ip=RECV_SIDE_IP,
+        r_mac=RECE_SIDE_MAC,
+        dqpn=RECV_SIDE_QPN,
+        psn=SEND_SIDE_PSN,
+        pmtu=PMTU_VALUE_FOR_TEST,
+        send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
+    )
+    
+    await tb.send_queue.sync_pointers()
+    rpt = await tb.meta_report_queue.deq_blocking()  # packet meta report first
+    
+    parsed_report = MeatReportQueueDescBthReth.from_buffer_copy(rpt)
+    if parsed_report.F_BTH.F_OPCODE != RdmaOpCode.RDMA_READ_REQUEST:
+        print(f"Error: Error at read test, read request opcode not right, "
+              f"received=0x{hex(parsed_report.F_BTH.F_OPCODE)},",
+              f"expected={hex(RdmaOpCode.RDMA_READ_REQUEST)}")
+        raise SystemExit
+    else:
+        print("local_loop_tb: PASS RDMA Read Test!")
+    
 
 def test_rdma():
     dut = "mkCocotbTop"
