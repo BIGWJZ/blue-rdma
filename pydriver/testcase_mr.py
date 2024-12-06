@@ -29,7 +29,7 @@ driver = BlueRdmaDriver(bar_mmap_file)
 
 buf_controller = HugeMemManager(huge_mnt_path)
 
-user_buf = buf_controller.allocate(MR_TEST_LEN // HUGE_PAGE_BYTE_CNT)
+user_buf, buf_id = buf_controller.allocate(MR_TEST_LEN // HUGE_PAGE_BYTE_CNT)
 mr_va = get_va_from_mem(user_buf)
 
 driver.memory_register(
@@ -50,61 +50,61 @@ driver.create_qp(
     pmtu=PMTU_VALUE_FOR_TEST,
 )
 
-# req_side_offset = 0
-# resp_side_offset = MR_TEST_LEN / 2
-# req_side_va = mr_va + req_side_offset
-# resp_side_va = mr_va + resp_side_offset
+req_side_offset = 0
+resp_side_offset = MR_TEST_LEN // 2
+req_side_va = mr_va + req_side_offset
+resp_side_va = mr_va + resp_side_offset
 
-# sgl = [
-#         SendQueueReqDescFragSGE(
-#         F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=req_side_va),
-#     ]
+sgl = [
+        SendQueueReqDescFragSGE(
+        F_LKEY=SEND_SIDE_KEY, F_LEN=SEND_BYTE_COUNT, F_LADDR=req_side_va),
+    ]
 
-# driver.send_queue.put_work_request(
-#     opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
-#     is_first=True,
-#     is_last=True,
-#     sgl=sgl,
-#     r_va=resp_side_va,
-#     r_key=RECV_SIDE_KEY,
-#     r_ip=RECV_SIDE_IP,
-#     r_mac=RECE_SIDE_MAC,
-#     dqpn=RECV_SIDE_QPN,
-#     psn=SEND_SIDE_PSN,
-#     pmtu=PMTU_VALUE_FOR_TEST,
-#     send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
-# )
+driver.send_queue.put_work_request(
+    opcode=WorkReqOpCode.IBV_WR_RDMA_WRITE,
+    is_first=True,
+    is_last=True,
+    sgl=sgl,
+    r_va=resp_side_va,
+    r_key=RECV_SIDE_KEY,
+    r_ip=RECV_SIDE_IP,
+    r_mac=RECE_SIDE_MAC,
+    dqpn=RECV_SIDE_QPN,
+    psn=SEND_SIDE_PSN,
+    pmtu=PMTU_VALUE_FOR_TEST,
+    send_flag=WorkReqSendFlag.IBV_SEND_SIGNALED,
+)
 
-# for idx in range(SEND_BYTE_COUNT):
-#     user_buf[req_side_offset + idx] = (0xBB + idx) & 0xFF
-#     user_buf[resp_side_offset + idx] = 0
+for idx in range(SEND_BYTE_COUNT):
+    user_buf[req_side_offset + idx] = (0xBB + idx) & 0xFF
+    user_buf[resp_side_offset + idx] = 0
     
-# driver.send_queue.sync_pointers()
+driver.send_queue.sync_pointers()
 
-# report = driver.meta_report_queue.deq_blocking()
-# print("receive meta report: ", MeatReportQueueDescBthReth.from_buffer_copy(report))
-# assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_ONLY)
-    
-    
-# ack_rpt = driver.meta_report_queue.deq_blocking()
-# assert_descriptor_ack(ack_rpt)
-
-# src_data = user_buf[req_side_offset + SEND_BYTE_COUNT]
-# dst_data = user_buf[resp_side_offset + SEND_BYTE_COUNT]
-
-# if src_data != dst_data:
-#     print("Error: DMA Target mem is not the same as source mem")
-#     for idx in range(len(src_data)):
-#         if src_data[idx] != dst_data[idx]:
-#             print("id:", idx,
-#                     "src: ", hex(src_data[idx]),
-#                     "dst: ", hex(dst_data[idx])
-#                     )
-#     raise SystemExit
-# else:
-#     print("PASS")
+report = driver.meta_report_queue.deq_blocking()
+print("receive meta report: ", MeatReportQueueDescBthReth.from_buffer_copy(report))
+assert_descriptor_reth(report, RdmaOpCode.RDMA_WRITE_ONLY)
     
     
+ack_rpt = driver.meta_report_queue.deq_blocking()
+assert_descriptor_ack(ack_rpt)
+
+src_data = user_buf[req_side_offset + SEND_BYTE_COUNT]
+dst_data = user_buf[resp_side_offset + SEND_BYTE_COUNT]
+
+if src_data != dst_data:
+    print("Error: DMA Target mem is not the same as source mem")
+    for idx in range(len(src_data)):
+        if src_data[idx] != dst_data[idx]:
+            print("id:", idx,
+                    "src: ", hex(src_data[idx]),
+                    "dst: ", hex(dst_data[idx])
+                    )
+    raise SystemExit
+else:
+    print("PASS")
+    
+buf_controller.close_all()
 driver.stop
 
 

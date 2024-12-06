@@ -21,6 +21,12 @@ class Ringbuf:
         self.is_h2c = is_h2c
         self.head_csr_addr = head_csr_addr
         self.tail_csr_addr = tail_csr_addr
+        
+    def check_pointer(self):
+        head = self.bar_host.read_csr_blocking(self.head_csr_addr)
+        tail = self.bar_host.read_csr_blocking(self.tail_csr_addr)
+        print("Check pointer: head %d @ %x, tail %d @ %x" % (head, self.head_csr_addr,
+              tail, self.tail_csr_addr))
 
     def sync_pointers(self):
         if (self.is_h2c):
@@ -89,8 +95,8 @@ class Ringbuf:
         while self.is_empty():
             times = times + 1
             self.sync_pointers()
-            time.sleep(0.001)
-            if (times > 2000):
+            time.sleep(0.1)
+            if (times > 100):
                 raise RuntimeError("Ringbuffer deq_blocking timeout")
         return self.deq()
 
@@ -101,6 +107,7 @@ class RingbufCommandReqQueue:
                           head_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_HEAD, tail_csr_addr=CSR_ADDR_CMD_REQ_QUEUE_TAIL)
         print("Blue-RDMA INFO: cmdReqQ init, buffer start pa:0x%x head_csr_addr:%d, tail_csr_addr:%d"%
               (start_pa, CSR_ADDR_CMD_REQ_QUEUE_HEAD, CSR_ADDR_CMD_REQ_QUEUE_TAIL))
+        
         bar_host.write_csr_blocking(
             CSR_ADDR_CMD_REQ_QUEUE_ADDR_LOW, start_pa & 0xFFFFFFFF)
         bar_host.write_csr_blocking(
@@ -208,6 +215,9 @@ class RingbufCommandReqQueue:
             F_QPN=qpn,
         )
         self.rb.enq(obj)
+        
+    def check_pointer(self):
+        self.rb.check_pointer()
 
 
 class RingbufCommandRespQueue:

@@ -59,7 +59,7 @@ typedef 4 CMAC_CDC_SYNC_STAGE;
 
 // `define LOCAL_LOOP_TEST 
 
-interface BsvTop#(numeric type dataSz, numeric type userSz);
+interface BsvTop;
     // Interface with PCIe IP
     (* prefix = "" *)
     interface RawXilinxPcieIp      rawPcie;
@@ -82,7 +82,7 @@ module mkBsvTop(
     (* osc = "global_reset_100mhz_clk" *) Clock globalResetClk,
     (* reset = "global_reset_resetn" *) Reset globalResetReset,
 
-    BsvTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
+    BsvTop ifc
 );
 
     Clock dmacClock <- exposeCurrentClock;
@@ -91,8 +91,6 @@ module mkBsvTop(
     Clock udpClock <- exposeCurrentClock;
     Reset udpReset <- exposeCurrentReset;
     
-    // XdmaWrapper#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) xdmaWrap <- mkXdmaWrapper;
-    // XdmaAxiLiteBridgeWrapper#(CsrAddr, CsrData) xdmaAxiLiteWrap <- mkXdmaAxiLiteBridgeWrapper(dmacClock, dmacReset);
     BdmaWrapper bdmaWrap <- mkBdmaWrapper;
     RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
     mkConnection(bdmaWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
@@ -172,7 +170,37 @@ module mkBsvTop(
     method csrSoftResetSignal = globalSoftReset.resetOut;
 endmodule
 
-interface CocotbTop#(numeric type dataSz, numeric type userSz);
+interface LocalLoopTop;
+    // Interface with PCIe IP
+    (* prefix = "" *)
+    interface RawXilinxPcieIp      rawPcie;
+endinterface
+
+module mkLocalLoopTop(LocalLoopTop);
+    Clock dmacClock <- exposeCurrentClock;
+    Reset dmacReset <- exposeCurrentReset;
+
+    Clock udpClock <- exposeCurrentClock;
+    Reset udpReset <- exposeCurrentReset;
+    
+    BdmaWrapper bdmaWrap <- mkBdmaWrapper;
+    RdmaUserLogicWithoutXdmaAndCmacWrapper udpAndRdma <- mkRdmaUserLogicWithoutXdmaAndCmacWrapper(udpClock, udpReset, dmacClock, dmacReset);
+
+    mkConnection(bdmaWrap.csrWriteClt, udpAndRdma.csrWriteSrv);
+    mkConnection(bdmaWrap.csrReadClt, udpAndRdma.csrReadSrv);
+
+    mkConnection(bdmaWrap.dmaReadSrv, udpAndRdma.dmaReadClt);
+    mkConnection(bdmaWrap.dmaWriteSrv, udpAndRdma.dmaWriteClt);
+
+    let axiStream512RxIn <- mkPutToFifoIn(udpAndRdma.axiStreamRxInUdp);
+
+    mkConnection(udpAndRdma.axiStreamTxOutUdp, axiStream512RxIn);
+
+    interface rawPcie = bdmaWrap.rawPcie;
+endmodule
+
+
+interface CocotbTop;
     // Interface with PCIe IP
     (* prefix = "" *)
     interface RawXilinxPcieIp      rawPcie;
@@ -185,9 +213,7 @@ interface CocotbTop#(numeric type dataSz, numeric type userSz);
 endinterface
 
 (* synthesize *)
-module mkCocotbTop(
-    CocotbTop#(USER_LOGIC_XDMA_KEEP_WIDTH, USER_LOGIC_XDMA_TUSER_WIDTH) ifc
-);
+module mkCocotbTop(CocotbTop);
 
     Clock dmacClock <- exposeCurrentClock;
     Reset dmacReset <- exposeCurrentReset;

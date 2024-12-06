@@ -57,11 +57,13 @@ class HugeMemManager:
         with open(path, "r+b") as f:
             mem = mmap.mmap(f.fileno(), byte_size, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
         self.mem_cache[cur_id] = mem
+        for bytes in range(byte_size):
+            mem[bytes] = 0
         return mem, cur_id
     
     def close(self, mem_id):
         if mem_id in self.mem_cache:
-            self.mem_cache[mem_id].close
+            self.mem_cache[mem_id].close()
             del self.mem_cache[mem_id]
             
     def close_all(self):
@@ -70,8 +72,7 @@ class HugeMemManager:
 
 class BlueRdmaDriver:
     def __init__(self, bar_mmap_filepath) -> None:
-        self.log = logging.getLogger("Bdma-Rdma Driver")
-        self.log.setLevel(logging.INFO)
+        print("Blue Rdma Driver Init...")
         self.bar = BlueRdmaBarInterface(bar_mmap_filepath)
         
         self.cmdReqQ_mem, self.cmdReqQ_pa = self.alloc_dma_mem(RING_BUFFER_SIZE)
@@ -92,13 +93,14 @@ class BlueRdmaDriver:
         
         self.cmd_req_queue.put_desc_set_udp_param(
             NIC_CONFIG_GATEWAY, NIC_CONFIG_NETMASK, NIC_CONFIG_IPADDR, NIC_CONFIG_MACADDR)
-        self.log.info("init: writing UDP settings...")
+        
+        print("init: writing UDP settings...")
         self.cmd_req_queue.sync_pointers()
-
+        time.sleep(0.5)
+        self.cmd_req_queue.check_pointer()
         self.cmd_resp_queue.deq_blocking()
 
         self.pgt_bufs = []
-        self.log.info("init: done! Use *memory_register* for rdma...")
         
     def alloc_dma_mem(self, size):
         dma_mem = mmap.mmap(-1, size)
@@ -138,7 +140,7 @@ class BlueRdmaDriver:
             acc_flag=acc_flag,
         )
         
-        pgt_buf, pgt_start_pa, pgt_len = self.gen_pgt_entries(buf_va, len)
+        pgt_buf, pgt_start_pa, pgt_len = self.gen_pgt_entries(buf_va, length)
         
         self.pgt_bufs.append(pgt_buf)
 
@@ -151,28 +153,28 @@ class BlueRdmaDriver:
         self.cmd_req_queue.sync_pointers()
         for _ in range(2):
             self.cmd_resp_queue.deq_blocking()
-        self.log.info("done memory register: mr_va:0x%x, mr_pa:0x%x, mr_len:%d, pgt_va:0x%x, pgt_pa:0x%x, pgt_len:%d"
+        print("done memory register: mr_va:0x%x, mr_pa:0x%x, mr_len:%d, pgt_va:0x%x, pgt_pa:0x%x, pgt_len:%d"
                       % (buf_va, va_to_pa(buf_va), length, get_va_from_mem(pgt_buf), pgt_start_pa, pgt_len))
     
-    def create_qp(self, qpn, peer_qpn, pd_handle, qp_type, acc_type, pmtu):
+    def create_qp(self, qpn, peer_qpn, pd_handler, qp_type, acc_flag, pmtu):
         self.cmd_req_queue.put_desc_update_qp(
             qpn=qpn,
             peer_qpn=peer_qpn,
-            pd_handler=pd_handle,
+            pd_handler=pd_handler,
             qp_type=qp_type,
-            acc_flag=acc_type,
+            acc_flag=acc_flag,
             pmtu=pmtu,
         )
         self.cmd_req_queue.sync_pointers()
         self.cmd_resp_queue.deq_blocking()
         
-    def gen_pgt_entries(self, buf_va, buf_len):
+    def gen_pgt_entries(self, buf_va:int, buf_len:int):
         # Warning: only support 1 huge_page now
-        entries_num = (buf_va + buf_len) // HUGE_PAGE_BYTE_CNT - buf_va // HUGE_PAGE_BYTE_CNT + 1
+        entries_num = ((buf_va + buf_len) // HUGE_PAGE_BYTE_CNT) - (buf_va // HUGE_PAGE_BYTE_CNT) + 1
         pgt_len = entries_num * 8
         pgt_mem, pgt_start_pa = self.alloc_dma_mem(pgt_len)
         buf_pa = va_to_pa(buf_va, is_huge_page=True)
-        pgt_mem[0:7] = bytes(buf_pa)
+        pgt_mem[0:8] = int.to_bytes(buf_pa, 8, byteorder = 'big', signed=False)
         return pgt_mem, pgt_start_pa, pgt_len
         
 
@@ -183,14 +185,9 @@ class BlueRdmaBarInterface:
         try: 
             self.bar_mmap_fd = os.open(bar_mmap_filepath, os.O_RDWR)
             self.bar_size = USER_BAR_SIZE
-            print(self.bar_mmap_fd, self.bar_size)
             self.mapped_memory = mmap.mmap(self.bar_mmap_fd, self.bar_size)
-        except PermissionError:
-            print(f"Error: Permission denied to access '{bar_mmap_filepath}'. Try running as root.")
-        except FileNotFoundError:
-            print(f"Error: Device file '{bar_mmap_filepath}' not found.")
-
-        print("BAR Debug", self.mapped_memory[0:16])
+        except:
+            raise RuntimeError("Get BAR mmap file error")
 
     def stop(self):
         self.mapped_memory.close()
@@ -205,5 +202,7 @@ class BlueRdmaBarInterface:
 
     def read_csr_blocking(self, addr) -> int:
         value_bytes = self.mapped_memory[addr:addr+4]
-        return int.from_bytes(value_bytes, byteorder='big')
+        rv = int.from_bytes(value_bytes, byteorder='big')
+        print("BAR Debug: read bar addr:%d, value:%d" % (addr, rv))
+        return rv
 

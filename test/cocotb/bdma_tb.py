@@ -321,17 +321,15 @@ class BdmaTb(object):
 class PcieBarTb:
     def __init__(self, bar):
         self.bar = bar
-        self.log = logging.getLogger("Bdma PcieBarHost")
-        self.log.setLevel(logging.INFO)
             
     async def write_csr_blocking(self, addr:int, value:int):
-        self.log.debug("PCIeTb Debug: write bar addr:%d, value:%d" % (addr, value))
+        print("PCIeTb Debug: write bar addr:%d, value:%d" % (addr, value))
         await self.bar.write(addr, value.to_bytes(4, byteorder='little', signed=False))  
 
     async def read_csr_blocking(self, addr) -> int:
         value_bytes = await self.bar.read(addr, 4)
         value = int.from_bytes(value_bytes, byteorder='little', signed=False)
-        self.log.debug("PCIeTb Debug: read bar addr:%d, value:%d" % (addr, value))
+        print("PCIeTb Debug: read bar addr:%d, value:%d" % (addr, value))
         return value
     
 
